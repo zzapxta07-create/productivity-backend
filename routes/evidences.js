@@ -5,8 +5,6 @@ import { authenticate } from '../middleware/auth.js';
 const router = Router();
 router.use(authenticate);
 
-const MISSED_PENALTY_PTS = 10;
-
 // POST /api/evidences — one per block (slot_index always 0)
 router.post('/', async (req, res) => {
   try {
@@ -34,20 +32,6 @@ router.post('/', async (req, res) => {
        focus_level || null, no_hice || false, reason || null]
     );
 
-    // Clear any missed-penalty for this block, then re-add if no_hice
-    await pool.query(
-      'DELETE FROM penalties WHERE block_id = $1 AND slot_index = 0 AND reason = $2',
-      [block_id, 'evidence_missed']
-    );
-    if (no_hice) {
-      await pool.query(
-        `INSERT INTO penalties (day_id, block_id, slot_index, points, reason)
-         VALUES ($1, $2, 0, $3, 'no_hice')
-         ON CONFLICT (day_id, block_id, slot_index) DO UPDATE SET points = EXCLUDED.points, reason = EXCLUDED.reason`,
-        [block.day_id, block_id, MISSED_PENALTY_PTS]
-      );
-    }
-
     // Check all_evidences_complete (1 evidence per non-OTROS block)
     const { rows: nonOtros } = await pool.query(
       `SELECT id FROM blocks WHERE day_id = $1 AND area_id != 'OTROS'`,
@@ -65,39 +49,6 @@ router.post('/', async (req, res) => {
     }
 
     res.json({ data: evidence });
-  } catch (err) {
-    res.status(500).json({ error: 'Error interno', details: err.message });
-  }
-});
-
-// POST /api/evidences/block-missed — called by frontend when 20-min window expires
-router.post('/block-missed', async (req, res) => {
-  try {
-    const { block_id } = req.body;
-
-    const { rows: [block] } = await pool.query(
-      `SELECT b.*, d.id AS day_id, d.user_id FROM blocks b
-       JOIN days d ON b.day_id = d.id WHERE b.id = $1`,
-      [block_id]
-    );
-    if (!block || block.user_id !== req.userId) {
-      return res.status(403).json({ error: 'Acceso denegado' });
-    }
-
-    // Only apply if no evidence already submitted for this block
-    const { rows: existing } = await pool.query(
-      'SELECT id FROM evidences WHERE block_id = $1 LIMIT 1', [block_id]
-    );
-    if (existing.length > 0) return res.json({ data: { skipped: true } });
-
-    await pool.query(
-      `INSERT INTO penalties (day_id, block_id, slot_index, points, reason)
-       VALUES ($1, $2, 0, $3, 'evidence_missed')
-       ON CONFLICT (day_id, block_id, slot_index) DO NOTHING`,
-      [block.day_id, block_id, MISSED_PENALTY_PTS]
-    );
-
-    res.json({ data: { penalized: true, points: MISSED_PENALTY_PTS } });
   } catch (err) {
     res.status(500).json({ error: 'Error interno', details: err.message });
   }

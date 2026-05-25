@@ -26,14 +26,17 @@ async function getDayFull(dayId) {
   return { ...day, blocks, evidences, penalties };
 }
 
-function computeScore(day, blocks, penalties) {
+function computeScore(day, blocks, evidences) {
   if (day.status === 'lost') return 0;
   let score = 0;
-  if (day.entered_on_time)        score += 15;
-  if (day.ritual_complete)        score += 15;
+  if (day.entered_on_time) score += 15;
+  if (day.ritual_complete) score += 15;
 
+  const evidencedIds = new Set((evidences || []).map(e => e.block_id));
   const areaMins = { NEGOCIO: 0, SEGUNDA: 0, ESTUDIO: 0, EJERCICIO: 0 };
   for (const b of blocks) {
+    if (b.area_id === 'OTROS') continue;
+    if (!evidencedIds.has(b.id)) continue;
     const dur = b.end_minutes - b.start_minutes;
     if (areaMins[b.area_id] !== undefined) areaMins[b.area_id] += dur;
   }
@@ -45,8 +48,7 @@ function computeScore(day, blocks, penalties) {
   if (day.all_evidences_complete) score += 15;
   if (day.close_complete)         score += 10;
 
-  const pen = penalties.reduce((acc, p) => acc + p.points, 0);
-  return Math.max(0, score - pen);
+  return Math.max(0, score);
 }
 
 // ─── routes ─────────────────────────────────────────────────────────────────
@@ -163,10 +165,10 @@ router.put('/:dateKey/close', async (req, res) => {
     }
 
     const { rows: blocks }    = await pool.query('SELECT * FROM blocks WHERE day_id = $1', [day.id]);
-    const { rows: penalties } = await pool.query('SELECT * FROM penalties WHERE day_id = $1', [day.id]);
+    const { rows: evidences } = await pool.query('SELECT * FROM evidences WHERE day_id = $1', [day.id]);
 
     const draftDay = { ...day, close_complete: true, status: 'complete' };
-    const score = computeScore(draftDay, blocks, penalties);
+    const score = computeScore(draftDay, blocks, evidences);
 
     await pool.query(
       `UPDATE days SET close_complete = TRUE, close_time = NOW(), close_photo_path = $1,
