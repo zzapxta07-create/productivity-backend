@@ -1,7 +1,10 @@
 import pg from 'pg';
 import 'dotenv/config';
 
-const { Pool } = pg;
+const { Pool, types } = pg;
+
+// Return DATE columns as plain strings (YYYY-MM-DD), not JS Date objects
+types.setTypeParser(1082, (val) => val);
 
 const pool = new Pool({
   host:     process.env.DB_HOST     || 'localhost',
