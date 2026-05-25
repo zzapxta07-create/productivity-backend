@@ -8,7 +8,7 @@ router.use(authenticate);
 // POST /api/evidences — one per block (slot_index always 0)
 router.post('/', async (req, res) => {
   try {
-    const { block_id, q1, q2, q3, focus_level, no_hice, reason } = req.body;
+    const { block_id, q1, q2, q3, focus_level, no_hice, reason, photo_data } = req.body;
 
     const { rows: [block] } = await pool.query(
       `SELECT b.*, d.id AS day_id, d.user_id FROM blocks b
@@ -20,16 +20,16 @@ router.post('/', async (req, res) => {
     }
 
     const { rows: [evidence] } = await pool.query(
-      `INSERT INTO evidences (day_id, block_id, slot_index, q1, q2, q3, focus_level, no_hice, reason)
-       VALUES ($1, $2, 0, $3, $4, $5, $6, $7, $8)
+      `INSERT INTO evidences (day_id, block_id, slot_index, q1, q2, q3, focus_level, no_hice, reason, photo_data)
+       VALUES ($1, $2, 0, $3, $4, $5, $6, $7, $8, $9)
        ON CONFLICT (block_id, slot_index) DO UPDATE SET
          q1 = EXCLUDED.q1, q2 = EXCLUDED.q2, q3 = EXCLUDED.q3,
          focus_level = EXCLUDED.focus_level, no_hice = EXCLUDED.no_hice,
-         reason = EXCLUDED.reason, submitted_at = NOW()
+         reason = EXCLUDED.reason, photo_data = EXCLUDED.photo_data, submitted_at = NOW()
        RETURNING *`,
       [block.day_id, block_id,
        q1 || null, q2 || null, q3 || null,
-       focus_level || null, no_hice || false, reason || null]
+       focus_level || null, no_hice || false, reason || null, photo_data || null]
     );
 
     // Check all_evidences_complete (1 evidence per non-OTROS block)
