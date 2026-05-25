@@ -68,20 +68,24 @@ router.get('/dashboard', async (req, res) => {
 // GET /api/stats/history?days=30
 router.get('/history', async (req, res) => {
   try {
-    const days = Math.min(parseInt(req.query.days) || 30, 365);
+    const daysParam = parseInt(req.query.days);
+    const allTime   = !req.query.days || daysParam === 0;
 
     const { rows } = await pool.query(
       `SELECT d.*,
-         COALESCE(SUM(CASE WHEN b.area_id = 'NEGOCIO'   THEN b.end_minutes - b.start_minutes ELSE 0 END), 0) AS neg_mins,
-         COALESCE(SUM(CASE WHEN b.area_id = 'SEGUNDA'   THEN b.end_minutes - b.start_minutes ELSE 0 END), 0) AS seg_mins,
-         COALESCE(SUM(CASE WHEN b.area_id = 'ESTUDIO'   THEN b.end_minutes - b.start_minutes ELSE 0 END), 0) AS est_mins,
-         COALESCE(SUM(CASE WHEN b.area_id = 'EJERCICIO' THEN b.end_minutes - b.start_minutes ELSE 0 END), 0) AS eje_mins
+         json_build_object(
+           'NEGOCIO',   COALESCE(SUM(CASE WHEN b.area_id = 'NEGOCIO'   THEN b.end_minutes - b.start_minutes ELSE 0 END), 0),
+           'SEGUNDA',   COALESCE(SUM(CASE WHEN b.area_id = 'SEGUNDA'   THEN b.end_minutes - b.start_minutes ELSE 0 END), 0),
+           'ESTUDIO',   COALESCE(SUM(CASE WHEN b.area_id = 'ESTUDIO'   THEN b.end_minutes - b.start_minutes ELSE 0 END), 0),
+           'EJERCICIO', COALESCE(SUM(CASE WHEN b.area_id = 'EJERCICIO' THEN b.end_minutes - b.start_minutes ELSE 0 END), 0)
+         ) AS area_minutes
        FROM days d
        LEFT JOIN blocks b ON b.day_id = d.id
-       WHERE d.user_id = $1 AND d.date_key >= CURRENT_DATE - ($2 || ' days')::INTERVAL
+       WHERE d.user_id = $1
+         ${allTime ? '' : `AND d.date_key >= CURRENT_DATE - ($2 || ' days')::INTERVAL`}
        GROUP BY d.id
        ORDER BY d.date_key DESC`,
-      [req.userId, days]
+      allTime ? [req.userId] : [req.userId, Math.min(daysParam, 365)]
     );
     res.json({ data: rows });
   } catch (err) {
