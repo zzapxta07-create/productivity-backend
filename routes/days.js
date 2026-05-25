@@ -279,7 +279,7 @@ router.post('/:dateKey/confirm-planning', async (req, res) => {
     );
     if (!day) return res.status(404).json({ error: 'Día no encontrado' });
 
-    await pool.query(`UPDATE days SET phase = 'ritual' WHERE id = $1`, [day.id]);
+    await pool.query(`UPDATE days SET phase = 'dashboard' WHERE id = $1`, [day.id]);
     res.json({ data: await getDayFull(day.id) });
   } catch (err) {
     res.status(500).json({ error: 'Error interno', details: err.message });
