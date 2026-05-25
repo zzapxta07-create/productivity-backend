@@ -23,12 +23,15 @@ const UPLOAD_DIR = path.resolve(process.env.UPLOAD_DIR || './uploads');
 
 mkdirSync(UPLOAD_DIR, { recursive: true });
 
-const allowedOrigins = (process.env.FRONTEND_URL || 'http://localhost:5173')
-  .split(',').map(s => s.trim());
+const allowedOrigins = [
+  'http://localhost:5173',
+  'https://treinta-dias.vercel.app',
+  ...(process.env.FRONTEND_URL || '').split(',').map(s => s.trim()).filter(Boolean),
+];
 app.use(cors({
   origin: (origin, cb) => {
     if (!origin || allowedOrigins.some(o => origin.startsWith(o))) cb(null, true);
-    else cb(new Error('CORS bloqueado'));
+    else cb(new Error('CORS bloqueado: ' + origin));
   },
   credentials: true,
 }));
