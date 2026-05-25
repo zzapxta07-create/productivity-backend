@@ -15,18 +15,9 @@ export function getBogotaDatetime() {
   };
 }
 
-// App day starts at 07:00 Bogota — before that it's still the previous day
+// No time restriction — app day = calendar day in Bogota
 export function getAppDayKey() {
-  const { dateStr, hour } = getBogotaDatetime();
-  if (hour < 7) {
-    const d = new Date(dateStr + 'T12:00:00');
-    d.setDate(d.getDate() - 1);
-    const y = d.getFullYear();
-    const mo = String(d.getMonth() + 1).padStart(2, '0');
-    const da = String(d.getDate()).padStart(2, '0');
-    return `${y}-${mo}-${da}`;
-  }
-  return dateStr;
+  return getBogotaDatetime().dateStr;
 }
 
 export function getBogotaMinutes() {
