@@ -9,6 +9,7 @@ const pool = new Pool({
   database: process.env.DB_NAME     || 'productivity',
   user:     process.env.DB_USER     || 'postgres',
   password: process.env.DB_PASSWORD || '',
+  ssl:      false,
 });
 
 export default pool;
