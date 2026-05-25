@@ -32,10 +32,12 @@ router.post('/chat', async (req, res) => {
       throw new Error(`n8n error ${response.status}: ${text}`);
     }
 
-    const data = await response.json();
-    // n8n AI Agent returns { output } or { response } or plain string
+    const raw = await response.json();
+    // n8n can return array or object — normalize to object
+    const data = Array.isArray(raw) ? raw[0] : raw;
     const reply = data?.output || data?.response || data?.text || data?.message
-      || (typeof data === 'string' ? data : JSON.stringify(data));
+      || (typeof raw === 'string' ? raw : null)
+      || JSON.stringify(raw);
 
     res.json({ data: { response: reply } });
   } catch (err) {
