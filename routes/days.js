@@ -55,7 +55,6 @@ function computeScore(day, blocks, penalties) {
 router.get('/today', async (req, res) => {
   try {
     const dateKey = getAppDayKey();
-    const { hour } = getBogotaDatetime();
 
     let { rows: [day] } = await pool.query(
       'SELECT * FROM days WHERE user_id = $1 AND date_key = $2',
@@ -63,16 +62,10 @@ router.get('/today', async (req, res) => {
     );
 
     if (!day) {
-      const isLate = hour >= 8;
-      const { rows: allDays } = await pool.query(
-        'SELECT id FROM days WHERE user_id = $1', [req.userId]
-      );
-      const isFirstDay = allDays.length === 0;
-      const initialPhase = (!isFirstDay && isLate) ? 'ups_prompt' : 'yesterday';
-
       const { rows: [newDay] } = await pool.query(
-        'INSERT INTO days (user_id, date_key, phase) VALUES ($1, $2, $3) RETURNING *',
-        [req.userId, dateKey, initialPhase]
+        `INSERT INTO days (user_id, date_key, phase, entered_on_time)
+         VALUES ($1, $2, 'yesterday', TRUE) RETURNING *`,
+        [req.userId, dateKey]
       );
       day = newDay;
     }
@@ -139,7 +132,7 @@ router.put('/:dateKey/ritual', async (req, res) => {
 
     await pool.query(
       `UPDATE days SET daily_phrase = $1, ritual_photo_path = $2,
-       ritual_complete = TRUE, phase = 'dashboard' WHERE id = $3`,
+       ritual_complete = TRUE, phase = 'planner' WHERE id = $3`,
       [phrase, photo_path || null, day.id]
     );
     res.json({ data: await getDayFull(day.id) });
@@ -194,6 +187,25 @@ router.get('/:dateKey/summary', async (req, res) => {
       [req.userId, req.params.dateKey]
     );
     if (!day) return res.json({ data: null });
+    res.json({ data: await getDayFull(day.id) });
+  } catch (err) {
+    res.status(500).json({ error: 'Error interno', details: err.message });
+  }
+});
+
+// POST /api/days/:dateKey/start  ← "Comenzar día" button
+router.post('/:dateKey/start', async (req, res) => {
+  try {
+    const { rows: [day] } = await pool.query(
+      'SELECT * FROM days WHERE user_id = $1 AND date_key = $2',
+      [req.userId, req.params.dateKey]
+    );
+    if (!day) return res.status(404).json({ error: 'Día no encontrado' });
+
+    await pool.query(
+      `UPDATE days SET phase = 'ritual', entered_on_time = TRUE WHERE id = $1`,
+      [day.id]
+    );
     res.json({ data: await getDayFull(day.id) });
   } catch (err) {
     res.status(500).json({ error: 'Error interno', details: err.message });
