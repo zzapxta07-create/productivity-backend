@@ -50,6 +50,54 @@ router.delete('/:id', async (req, res) => {
   }
 });
 
+// PUT /api/blocks/:id  — edit a block's time/area, increment edit counter
+router.put('/:id', async (req, res) => {
+  try {
+    const { rows: [block] } = await pool.query(
+      `SELECT b.*, d.user_id, d.id AS the_day_id FROM blocks b
+       JOIN days d ON b.day_id = d.id WHERE b.id = $1`,
+      [req.params.id]
+    );
+    if (!block)                       return res.status(404).json({ error: 'Bloque no encontrado' });
+    if (block.user_id !== req.userId) return res.status(403).json({ error: 'Acceso denegado' });
+
+    const { area_id, project_id, start_time, end_time, start_minutes, end_minutes } = req.body;
+
+    const { rows: [updated] } = await pool.query(
+      `UPDATE blocks SET
+         area_id       = COALESCE($1, area_id),
+         project_id    = $2,
+         start_time    = COALESCE($3, start_time),
+         end_time      = COALESCE($4, end_time),
+         start_minutes = COALESCE($5, start_minutes),
+         end_minutes   = COALESCE($6, end_minutes)
+       WHERE id = $7 RETURNING *`,
+      [area_id || null, project_id ?? null, start_time || null, end_time || null,
+       start_minutes ?? null, end_minutes ?? null, req.params.id]
+    );
+
+    await pool.query(
+      `UPDATE days SET block_edits_count = COALESCE(block_edits_count, 0) + 1 WHERE id = $1`,
+      [block.the_day_id]
+    );
+
+    // Return updated day so frontend can refresh in one call
+    const { rows: [day] } = await pool.query(
+      `SELECT d.*,
+         (SELECT json_agg(b ORDER BY b.start_minutes)
+          FROM blocks b WHERE b.day_id = d.id) AS blocks,
+         (SELECT json_agg(e)
+          FROM evidences e WHERE e.day_id = d.id) AS evidences
+       FROM days d WHERE d.id = $1`,
+      [block.the_day_id]
+    );
+
+    res.json({ data: { block: updated, day } });
+  } catch (err) {
+    res.status(500).json({ error: 'Error interno', details: err.message });
+  }
+});
+
 // PUT /api/blocks/reorder
 router.put('/reorder', async (req, res) => {
   try {
