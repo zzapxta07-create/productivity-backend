@@ -35,7 +35,7 @@ router.post('/chat', async (req, res) => {
     const raw = await response.json();
     // n8n can return array or object — normalize to object
     const data = Array.isArray(raw) ? raw[0] : raw;
-    const reply = data?.output || data?.response || data?.text || data?.message
+    const reply = raw?.data?.response || data?.output || data?.response || data?.text || data?.message
       || (typeof raw === 'string' ? raw : null)
       || JSON.stringify(raw);
 

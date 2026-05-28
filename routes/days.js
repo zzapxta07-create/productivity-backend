@@ -32,7 +32,7 @@ function computeScore(day, blocks, evidences) {
   if (day.entered_on_time) score += 15;
   if (day.ritual_complete) score += 15;
 
-  const evidencedIds = new Set((evidences || []).map(e => e.block_id));
+  const evidencedIds = new Set((evidences || []).filter(e => !e.no_hice).map(e => e.block_id));
   const areaMins = { NEGOCIO: 0, SEGUNDA: 0, ESTUDIO: 0, EJERCICIO: 0 };
   for (const b of blocks) {
     if (b.area_id === 'OTROS') continue;
