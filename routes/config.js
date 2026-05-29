@@ -81,6 +81,27 @@ router.post('/special-day/use', async (req, res) => {
   }
 });
 
+// PUT /api/config — actualizar special_days_total
+router.put('/', async (req, res) => {
+  try {
+    const { special_days_total } = req.body;
+    if (special_days_total !== undefined) {
+      const val = parseInt(special_days_total);
+      if (isNaN(val) || val < 0 || val > 31) {
+        return res.status(400).json({ error: 'Valor inválido (0–31)' });
+      }
+      await pool.query(
+        'UPDATE user_config SET special_days_total = $1 WHERE user_id = $2',
+        [val, req.userId]
+      );
+    }
+    const cfg = await getOrResetConfig(req.userId);
+    res.json({ data: cfg });
+  } catch (err) {
+    res.status(500).json({ error: 'Error interno', details: err.message });
+  }
+});
+
 // POST /api/config/replan/use
 router.post('/replan/use', async (req, res) => {
   try {

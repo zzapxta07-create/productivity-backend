@@ -15,16 +15,16 @@ async function verifyDayOwnership(dayId, userId) {
 // POST /api/blocks
 router.post('/', async (req, res) => {
   try {
-    const { day_id, local_id, area_id, project_id, start_time, end_time, start_minutes, end_minutes, sort_order } = req.body;
+    const { day_id, local_id, area_id, project_id, start_time, end_time, start_minutes, end_minutes, sort_order, notes } = req.body;
 
     if (!(await verifyDayOwnership(day_id, req.userId))) {
       return res.status(403).json({ error: 'Acceso denegado' });
     }
 
     const { rows: [block] } = await pool.query(
-      `INSERT INTO blocks (day_id, local_id, area_id, project_id, start_time, end_time, start_minutes, end_minutes, sort_order)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
-      [day_id, local_id || null, area_id, project_id || null, start_time, end_time, start_minutes, end_minutes, sort_order ?? 0]
+      `INSERT INTO blocks (day_id, local_id, area_id, project_id, start_time, end_time, start_minutes, end_minutes, sort_order, notes)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
+      [day_id, local_id || null, area_id, project_id || null, start_time, end_time, start_minutes, end_minutes, sort_order ?? 0, notes || null]
     );
     res.status(201).json({ data: block });
   } catch (err) {
@@ -61,7 +61,7 @@ router.put('/:id', async (req, res) => {
     if (!block)                       return res.status(404).json({ error: 'Bloque no encontrado' });
     if (block.user_id !== req.userId) return res.status(403).json({ error: 'Acceso denegado' });
 
-    const { area_id, project_id, start_time, end_time, start_minutes, end_minutes } = req.body;
+    const { area_id, project_id, start_time, end_time, start_minutes, end_minutes, notes } = req.body;
 
     const { rows: [updated] } = await pool.query(
       `UPDATE blocks SET
@@ -70,10 +70,11 @@ router.put('/:id', async (req, res) => {
          start_time    = COALESCE($3, start_time),
          end_time      = COALESCE($4, end_time),
          start_minutes = COALESCE($5, start_minutes),
-         end_minutes   = COALESCE($6, end_minutes)
-       WHERE id = $7 RETURNING *`,
+         end_minutes   = COALESCE($6, end_minutes),
+         notes         = $7
+       WHERE id = $8 RETURNING *`,
       [area_id || null, project_id ?? null, start_time || null, end_time || null,
-       start_minutes ?? null, end_minutes ?? null, req.params.id]
+       start_minutes ?? null, end_minutes ?? null, notes ?? null, req.params.id]
     );
 
     await pool.query(
