@@ -15,8 +15,9 @@ import projectsRoutes  from './routes/projects.js';
 import habitsRoutes    from './routes/habits.js';
 import statsRoutes     from './routes/stats.js';
 import uploadsRoutes   from './routes/uploads.js';
-import configRoutes    from './routes/config.js';
-import aiRoutes        from './routes/ai.js';
+import configRoutes       from './routes/config.js';
+import aiRoutes           from './routes/ai.js';
+import weeklyPlansRoutes  from './routes/weekly-plans.js';
 
 const app       = express();
 const PORT      = process.env.PORT       || 3001;
@@ -47,7 +48,8 @@ app.use('/api/projects',  projectsRoutes);
 app.use('/api/habits',    habitsRoutes);
 app.use('/api/stats',     statsRoutes);
 app.use('/api/uploads',   uploadsRoutes);
-app.use('/api/config',    configRoutes);
-app.use('/api/ai',        aiRoutes);
+app.use('/api/config',        configRoutes);
+app.use('/api/ai',            aiRoutes);
+app.use('/api/weekly-plans',  weeklyPlansRoutes);
 
 app.listen(PORT, () => console.log(`Backend running on :${PORT}`));

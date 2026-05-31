@@ -6,6 +6,41 @@ import { getAppDayKey, getBogotaDatetime } from '../utils/bogotaTime.js';
 const router = Router();
 router.use(authenticate);
 
+async function seedBlocksFromWeeklyPlan(dayId, userId, dateKey) {
+  const d = new Date(dateKey + 'T12:00:00Z');
+  const dow = d.getUTCDay();
+  const diff = dow === 0 ? -6 : 1 - dow;
+  d.setUTCDate(d.getUTCDate() + diff);
+  const weekStart = d.toISOString().slice(0, 10);
+  const dayOfWeek = dow === 0 ? 6 : dow - 1;
+
+  const { rows: [plan] } = await pool.query(
+    'SELECT id FROM weekly_plans WHERE user_id = $1 AND week_start = $2',
+    [userId, weekStart]
+  );
+  if (!plan) return;
+
+  const { rows: templateBlocks } = await pool.query(
+    `SELECT * FROM weekly_plan_blocks
+     WHERE plan_id = $1 AND day_of_week = $2
+     ORDER BY sort_order, start_minutes`,
+    [plan.id, dayOfWeek]
+  );
+  if (templateBlocks.length === 0) return;
+
+  for (let i = 0; i < templateBlocks.length; i++) {
+    const b = templateBlocks[i];
+    await pool.query(
+      `INSERT INTO blocks
+         (day_id, area_id, project_id, start_time, end_time,
+          start_minutes, end_minutes, notes, sort_order)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+      [dayId, b.area_id, b.project_id, b.start_time, b.end_time,
+       b.start_minutes, b.end_minutes, b.notes, i]
+    );
+  }
+}
+
 // ─── helpers ────────────────────────────────────────────────────────────────
 
 async function getDayFull(dayId) {
@@ -125,7 +160,7 @@ router.put('/:dateKey/phase', async (req, res) => {
 // PUT /api/days/:dateKey/ritual
 router.put('/:dateKey/ritual', async (req, res) => {
   try {
-    const { phrase, photo_path } = req.body;
+    const { phrase, photo_path, ritual_essay } = req.body;
     const { rows: [day] } = await pool.query(
       'SELECT * FROM days WHERE user_id = $1 AND date_key = $2',
       [req.userId, req.params.dateKey]
@@ -133,9 +168,9 @@ router.put('/:dateKey/ritual', async (req, res) => {
     if (!day) return res.status(404).json({ error: 'Día no encontrado' });
 
     await pool.query(
-      `UPDATE days SET daily_phrase = $1, ritual_photo_path = $2,
-       ritual_complete = TRUE, phase = 'planner' WHERE id = $3`,
-      [phrase, photo_path || null, day.id]
+      `UPDATE days SET daily_phrase = $1, ritual_photo_path = $2, ritual_essay = $3,
+       ritual_complete = TRUE, phase = 'planner' WHERE id = $4`,
+      [phrase || null, photo_path || null, ritual_essay || null, day.id]
     );
     res.json({ data: await getDayFull(day.id) });
   } catch (err) {
@@ -146,7 +181,7 @@ router.put('/:dateKey/ritual', async (req, res) => {
 // PUT /api/days/:dateKey/close
 router.put('/:dateKey/close', async (req, res) => {
   try {
-    const { emotional_state, close_photo_path, project_progress } = req.body;
+    const { emotional_state, close_photo_path, project_progress, close_summary } = req.body;
     const { rows: [day] } = await pool.query(
       'SELECT * FROM days WHERE user_id = $1 AND date_key = $2',
       [req.userId, req.params.dateKey]
@@ -172,8 +207,9 @@ router.put('/:dateKey/close', async (req, res) => {
 
     await pool.query(
       `UPDATE days SET close_complete = TRUE, close_time = NOW(), close_photo_path = $1,
-       emotional_state = $2, status = 'complete', score = $3, phase = 'day_complete' WHERE id = $4`,
-      [close_photo_path || null, emotional_state || null, score, day.id]
+       emotional_state = $2, status = 'complete', score = $3, phase = 'day_complete',
+       close_summary = $5 WHERE id = $4`,
+      [close_photo_path || null, emotional_state || null, score, day.id, close_summary || null]
     );
     res.json({ data: await getDayFull(day.id) });
   } catch (err) {
@@ -280,6 +316,13 @@ router.post('/:dateKey/confirm-planning', async (req, res) => {
       [req.userId, req.params.dateKey]
     );
     if (!day) return res.status(404).json({ error: 'Día no encontrado' });
+
+    const { rows: dayBlocks } = await pool.query(
+      'SELECT id FROM blocks WHERE day_id = $1 LIMIT 1', [day.id]
+    );
+    if (dayBlocks.length === 0) {
+      await seedBlocksFromWeeklyPlan(day.id, req.userId, req.params.dateKey);
+    }
 
     await pool.query(`UPDATE days SET phase = 'dashboard' WHERE id = $1`, [day.id]);
     res.json({ data: await getDayFull(day.id) });
