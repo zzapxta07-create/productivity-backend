@@ -32,6 +32,7 @@ router.post('/', async (req, res) => {
         ups_total               = 1,
         special_days_used_count = 0,
         replan_days_used_count  = 0,
+        areas_config            = NULL,
         config_month            = DATE_TRUNC('month', CURRENT_DATE),
         updated_at              = NOW()
       WHERE user_id = $1

@@ -21,6 +21,7 @@ import weeklyPlansRoutes  from './routes/weekly-plans.js';
 import notesRoutes        from './routes/notes.js';
 import tasksRoutes        from './routes/tasks.js';
 import resetRoutes        from './routes/reset.js';
+import areasRoutes        from './routes/areas.js';
 
 const app       = express();
 const PORT      = process.env.PORT       || 3001;
@@ -57,5 +58,6 @@ app.use('/api/weekly-plans',  weeklyPlansRoutes);
 app.use('/api/notes',         notesRoutes);
 app.use('/api/tasks',         tasksRoutes);
 app.use('/api/reset',         resetRoutes);
+app.use('/api/areas',         areasRoutes);
 
 app.listen(PORT, () => console.log(`Backend running on :${PORT}`));
