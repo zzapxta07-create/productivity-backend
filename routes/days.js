@@ -113,6 +113,57 @@ router.get('/today', async (req, res) => {
   }
 });
 
+// POST /api/days/ensure/:dateKey — create day if it doesn't exist, return it
+router.post('/ensure/:dateKey', async (req, res) => {
+  try {
+    const dateKey = req.params.dateKey;
+    const { rows: [day] } = await pool.query(
+      `INSERT INTO days (user_id, date_key, phase, status)
+       VALUES ($1, $2, 'planner', 'in_progress')
+       ON CONFLICT (user_id, date_key) DO UPDATE SET updated_at = NOW()
+       RETURNING *`,
+      [req.userId, dateKey]
+    );
+    res.json({ data: day });
+  } catch (err) {
+    res.status(500).json({ error: 'Error interno', details: err.message });
+  }
+});
+
+// GET /api/days/week/:weekDate — returns all 7 days of the week with blocks
+router.get('/week/:weekDate', async (req, res) => {
+  try {
+    const d = new Date(req.params.weekDate + 'T12:00:00Z');
+    const dow = d.getUTCDay();
+    const diff = dow === 0 ? -6 : 1 - dow;
+    d.setUTCDate(d.getUTCDate() + diff);
+    const days = [];
+    for (let i = 0; i < 7; i++) {
+      const dd = new Date(d);
+      dd.setUTCDate(d.getUTCDate() + i);
+      const dateKey = dd.toISOString().slice(0, 10);
+      const { rows: [day] } = await pool.query(
+        'SELECT * FROM days WHERE user_id = $1 AND date_key = $2',
+        [req.userId, dateKey]
+      );
+      if (day) {
+        const { rows: blocks } = await pool.query(
+          `SELECT b.*, p.name AS project_name
+           FROM blocks b LEFT JOIN projects p ON b.project_id = p.id
+           WHERE b.day_id = $1 ORDER BY b.sort_order, b.start_minutes`,
+          [day.id]
+        );
+        days.push({ ...day, blocks, dateKey });
+      } else {
+        days.push({ dateKey, blocks: [] });
+      }
+    }
+    res.json({ data: days });
+  } catch (err) {
+    res.status(500).json({ error: 'Error interno', details: err.message });
+  }
+});
+
 // GET /api/days (list)
 router.get('/', async (req, res) => {
   try {
@@ -324,7 +375,8 @@ router.post('/:dateKey/confirm-planning', async (req, res) => {
       await seedBlocksFromWeeklyPlan(day.id, req.userId, req.params.dateKey);
     }
 
-    await pool.query(`UPDATE days SET phase = 'dashboard' WHERE id = $1`, [day.id]);
+    const nextPhase = day.ritual_complete ? 'dashboard' : 'ritual';
+    await pool.query(`UPDATE days SET phase = $1 WHERE id = $2`, [nextPhase, day.id]);
     res.json({ data: await getDayFull(day.id) });
   } catch (err) {
     res.status(500).json({ error: 'Error interno', details: err.message });
