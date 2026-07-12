@@ -29,6 +29,7 @@ router.post('/login', async (req, res) => {
     });
     res.json({ data: { token, user: { id: user.id, username: user.username } } });
   } catch (err) {
+    console.error('Login error:', err);
     res.status(500).json({ error: 'Error interno', details: err.message });
   }
 });
