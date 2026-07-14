@@ -49,14 +49,36 @@ router.put('/:id', async (req, res) => {
     );
     if (!existing) return res.status(404).json({ error: 'Proyecto no encontrado' });
 
+    // Partial update: only touch fields the caller actually sent, so a call
+    // like { progress } from the dashboard slider can't null out name/area/etc.
     const { area_id, name, type, progress, done, deadline, milestone_percent, milestone_date, priority, archived, notes } = req.body;
+    const sets   = [];
+    const params = [];
+    function set(column, value) {
+      params.push(value);
+      sets.push(`${column} = $${params.length}`);
+    }
+    if (area_id !== undefined)           set('area_id', area_id);
+    if (name !== undefined)              set('name', name);
+    if (type !== undefined)              set('type', type);
+    if (progress !== undefined)          set('progress', progress);
+    if (done !== undefined)              set('done', done);
+    if (deadline !== undefined)          set('deadline', deadline || null);
+    if (milestone_percent !== undefined) set('milestone_percent', milestone_percent || null);
+    if (milestone_date !== undefined)    set('milestone_date', milestone_date || null);
+    if (priority !== undefined)          set('priority', priority || null);
+    if (archived !== undefined)          set('archived', archived || false);
+    if (notes !== undefined)             set('notes', notes || null);
+
+    if (sets.length === 0) {
+      return res.status(400).json({ error: 'Nada para actualizar' });
+    }
+    set('updated_at', new Date());
+    params.push(req.params.id, req.userId);
     const { rows: [project] } = await pool.query(
-      `UPDATE projects SET area_id=$1, name=$2, type=$3, progress=$4, done=$5, deadline=$6,
-       milestone_percent=$7, milestone_date=$8, priority=$9, archived=$10, notes=$11
-       WHERE id=$12 AND user_id=$13 RETURNING *`,
-      [area_id, name, type, progress, done, deadline || null,
-       milestone_percent || null, milestone_date || null, priority || null, archived || false, notes || null,
-       req.params.id, req.userId]
+      `UPDATE projects SET ${sets.join(', ')}
+       WHERE id = $${params.length - 1} AND user_id = $${params.length} RETURNING *`,
+      params
     );
     res.json({ data: project });
   } catch (err) {
