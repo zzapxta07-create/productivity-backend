@@ -61,20 +61,32 @@ router.put('/:id', async (req, res) => {
     if (!block)                       return res.status(404).json({ error: 'Bloque no encontrado' });
     if (block.user_id !== req.userId) return res.status(403).json({ error: 'Acceso denegado' });
 
-    const { area_id, project_id, start_time, end_time, start_minutes, end_minutes, notes } = req.body;
+    const { area_id, start_time, end_time, start_minutes, end_minutes } = req.body;
 
+    // Build the SET clause dynamically so a field the caller never sent keeps
+    // its current value, while an explicit null (e.g. clearing the project)
+    // still goes through. COALESCE alone can't tell "omitted" from "set to null".
+    const sets   = [];
+    const params = [];
+    function set(column, value) {
+      params.push(value);
+      sets.push(`${column} = $${params.length}`);
+    }
+    if (area_id)                        set('area_id', area_id);
+    if (start_time)                     set('start_time', start_time);
+    if (end_time)                       set('end_time', end_time);
+    if (start_minutes !== undefined && start_minutes !== null) set('start_minutes', start_minutes);
+    if (end_minutes   !== undefined && end_minutes   !== null) set('end_minutes', end_minutes);
+    if ('project_id' in req.body)       set('project_id', req.body.project_id ?? null);
+    if ('notes' in req.body)            set('notes', req.body.notes ?? null);
+
+    if (sets.length === 0) {
+      return res.status(400).json({ error: 'Nada para actualizar' });
+    }
+    params.push(req.params.id);
     const { rows: [updated] } = await pool.query(
-      `UPDATE blocks SET
-         area_id       = COALESCE($1, area_id),
-         project_id    = $2,
-         start_time    = COALESCE($3, start_time),
-         end_time      = COALESCE($4, end_time),
-         start_minutes = COALESCE($5, start_minutes),
-         end_minutes   = COALESCE($6, end_minutes),
-         notes         = $7
-       WHERE id = $8 RETURNING *`,
-      [area_id || null, project_id ?? null, start_time || null, end_time || null,
-       start_minutes ?? null, end_minutes ?? null, notes ?? null, req.params.id]
+      `UPDATE blocks SET ${sets.join(', ')} WHERE id = $${params.length} RETURNING *`,
+      params
     );
 
     await pool.query(
