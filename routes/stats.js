@@ -1,9 +1,39 @@
 import { Router } from 'express';
 import pool from '../db.js';
 import { authenticate } from '../middleware/auth.js';
+import { getAppDayKey } from '../utils/bogotaTime.js';
 
 const router = Router();
 router.use(authenticate);
+
+// GET /api/stats/streak — consecutive days (most recent backward) where the
+// morning ritual was completed AND at least one time block was scheduled.
+router.get('/streak', async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT d.date_key, d.ritual_complete, d.status,
+         EXISTS(SELECT 1 FROM blocks b WHERE b.day_id = d.id) AS has_blocks
+       FROM days d
+       WHERE d.user_id = $1
+       ORDER BY d.date_key DESC`,
+      [req.userId]
+    );
+
+    const todayKey = getAppDayKey();
+    let streak = 0;
+    for (const d of rows) {
+      const dateKey = d.date_key.toString().slice(0, 10);
+      const done = d.ritual_complete && d.has_blocks && d.status !== 'lost';
+      if (done) { streak++; continue; }
+      if (dateKey === todayKey) continue; // today isn't finished yet — doesn't break the streak
+      break;
+    }
+
+    res.json({ data: { streak } });
+  } catch (err) {
+    res.status(500).json({ error: 'Error interno', details: err.message });
+  }
+});
 
 // GET /api/stats/dashboard
 router.get('/dashboard', async (req, res) => {
