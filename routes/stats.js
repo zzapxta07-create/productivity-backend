@@ -10,16 +10,21 @@ router.use(authenticate);
 // morning ritual was completed AND at least one time block was scheduled.
 router.get('/streak', async (req, res) => {
   try {
+    const todayKey = getAppDayKey();
+
+    // Exclude days beyond today — the weekly planner pre-creates a `days`
+    // row for future dates as soon as you schedule blocks for them, and
+    // those rows (ritual never done, not "today") would otherwise break
+    // the streak count before it ever reaches today's real row.
     const { rows } = await pool.query(
       `SELECT d.date_key, d.ritual_complete, d.status,
          EXISTS(SELECT 1 FROM blocks b WHERE b.day_id = d.id) AS has_blocks
        FROM days d
-       WHERE d.user_id = $1
+       WHERE d.user_id = $1 AND d.date_key <= $2::date
        ORDER BY d.date_key DESC`,
-      [req.userId]
+      [req.userId, todayKey]
     );
 
-    const todayKey = getAppDayKey();
     let streak = 0;
     for (const d of rows) {
       const dateKey = d.date_key.toString().slice(0, 10);
