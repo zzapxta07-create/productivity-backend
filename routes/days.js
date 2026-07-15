@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import pool from '../db.js';
 import { authenticate } from '../middleware/auth.js';
-import { getAppDayKey, getBogotaDatetime } from '../utils/bogotaTime.js';
+import { getAppDayKey, getBogotaDatetime, isLateInBogota } from '../utils/bogotaTime.js';
 
 const router = Router();
 router.use(authenticate);
@@ -61,7 +61,24 @@ async function getDayFull(dayId) {
   return { ...day, blocks, evidences, penalties };
 }
 
-function computeScore(day, blocks, evidences) {
+const DEFAULT_MIN_MINUTES = { NEGOCIO: 300, SEGUNDA: 60, ESTUDIO: 180, EJERCICIO: 30 };
+
+// Reads the user's customized area minimums (Config screen), falling back to
+// defaults — mirrors the merge logic in routes/areas.js.
+async function getAreaMinMinutes(userId) {
+  const { rows: [cfg] } = await pool.query(
+    'SELECT areas_config FROM user_config WHERE user_id = $1', [userId]
+  );
+  const overrides = cfg?.areas_config || {};
+  const result = { ...DEFAULT_MIN_MINUTES };
+  for (const id of Object.keys(result)) {
+    const v = overrides[id]?.min_minutes;
+    if (v !== undefined && v !== null) result[id] = Number(v);
+  }
+  return result;
+}
+
+function computeScore(day, blocks, evidences, minMinutes = DEFAULT_MIN_MINUTES) {
   if (day.status === 'lost') return 0;
   let score = 0;
   if (day.entered_on_time) score += 15;
@@ -75,10 +92,10 @@ function computeScore(day, blocks, evidences) {
     const dur = b.end_minutes - b.start_minutes;
     if (areaMins[b.area_id] !== undefined) areaMins[b.area_id] += dur;
   }
-  if (areaMins.NEGOCIO   >= 300) score += 15;
-  if (areaMins.SEGUNDA   >=  60) score += 10;
-  if (areaMins.ESTUDIO   >= 180) score += 10;
-  if (areaMins.EJERCICIO >=  30) score += 10;
+  if (areaMins.NEGOCIO   >= minMinutes.NEGOCIO)   score += 15;
+  if (areaMins.SEGUNDA   >= minMinutes.SEGUNDA)   score += 10;
+  if (areaMins.ESTUDIO   >= minMinutes.ESTUDIO)   score += 10;
+  if (areaMins.EJERCICIO >= minMinutes.EJERCICIO) score += 10;
 
   if (day.all_evidences_complete) score += 15;
   if (day.close_complete)         score += 10;
@@ -252,9 +269,10 @@ router.put('/:dateKey/close', async (req, res) => {
 
     const { rows: blocks }    = await pool.query('SELECT * FROM blocks WHERE day_id = $1', [day.id]);
     const { rows: evidences } = await pool.query('SELECT * FROM evidences WHERE day_id = $1', [day.id]);
+    const minMinutes = await getAreaMinMinutes(req.userId);
 
     const draftDay = { ...day, close_complete: true, status: 'complete' };
-    const score = computeScore(draftDay, blocks, evidences);
+    const score = computeScore(draftDay, blocks, evidences, minMinutes);
 
     await pool.query(
       `UPDATE days SET close_complete = TRUE, close_time = NOW(), close_photo_path = $1,
@@ -291,10 +309,14 @@ router.post('/:dateKey/start', async (req, res) => {
     );
     if (!day) return res.status(404).json({ error: 'Día no encontrado' });
 
-    await pool.query(
-      `UPDATE days SET phase = 'ritual', entered_on_time = TRUE WHERE id = $1`,
-      [day.id]
-    );
+    if (isLateInBogota()) {
+      await pool.query(`UPDATE days SET phase = 'ups_prompt' WHERE id = $1`, [day.id]);
+    } else {
+      await pool.query(
+        `UPDATE days SET phase = 'ritual', entered_on_time = TRUE WHERE id = $1`,
+        [day.id]
+      );
+    }
     res.json({ data: await getDayFull(day.id) });
   } catch (err) {
     res.status(500).json({ error: 'Error interno', details: err.message });
@@ -312,7 +334,7 @@ router.post('/:dateKey/ups/use', async (req, res) => {
 
     await pool.query('UPDATE user_config SET ups_used = TRUE WHERE user_id = $1', [req.userId]);
     await pool.query(
-      `UPDATE days SET used_ups = TRUE, entered_on_time = TRUE, phase = 'yesterday' WHERE id = $1`,
+      `UPDATE days SET used_ups = TRUE, entered_on_time = TRUE, phase = 'ritual' WHERE id = $1`,
       [day.id]
     );
     res.json({ data: await getDayFull(day.id) });
@@ -350,7 +372,7 @@ router.post('/:dateKey/continue-late', async (req, res) => {
     if (!day) return res.status(404).json({ error: 'Día no encontrado' });
 
     await pool.query(
-      `UPDATE days SET entered_on_time = FALSE, phase = 'yesterday' WHERE id = $1`,
+      `UPDATE days SET entered_on_time = FALSE, phase = 'ritual' WHERE id = $1`,
       [day.id]
     );
     res.json({ data: await getDayFull(day.id) });
