@@ -134,9 +134,13 @@ router.get('/today', async (req, res) => {
 router.post('/ensure/:dateKey', async (req, res) => {
   try {
     const dateKey = req.params.dateKey;
+    // Same starting phase as /today's auto-create — a day pre-created here
+    // (e.g. planning next week's blocks in advance) must still go through
+    // the normal start → ritual → planner flow once it's actually reached,
+    // instead of skipping straight to the planner.
     const { rows: [day] } = await pool.query(
       `INSERT INTO days (user_id, date_key, phase, status)
-       VALUES ($1, $2, 'planner', 'in_progress')
+       VALUES ($1, $2, 'yesterday', 'in_progress')
        ON CONFLICT (user_id, date_key) DO UPDATE SET updated_at = NOW()
        RETURNING *`,
       [req.userId, dateKey]
